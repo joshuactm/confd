@@ -55,6 +55,7 @@ const globalLogging = "/calico/bgp/v1/global/loglevel"
 // Handle a few keys that we need to default if not specified.
 var globalDefaults = map[string]string{
 	"/calico/bgp/v1/global/as_num":    "64512",
+	"/calico/bgp/v1/global/password":  "",
 	"/calico/bgp/v1/global/node_mesh": `{"enabled": true}`,
 	globalLogging:                     "info",
 }
@@ -363,6 +364,7 @@ type bgpPeer struct {
 	RRClusterID string               `json:"rr_cluster_id"`
 	Port        uint16               `json:"port"`
 	KeepNextHop bool                 `json:"keep_next_hop"`
+	Password    string               `json:"password,string,omitempty"`
 }
 
 type bgpPrefix struct {
@@ -469,6 +471,7 @@ func (c *client) updatePeersV1() {
 					ASNum:       v3res.Spec.ASNumber,
 					Port:        port,
 					KeepNextHop: v3res.Spec.KeepOriginalNextHop,
+					Password:    v3res.Spec.Password,
 				})
 			}
 			log.Debugf("Peers %#v", peers)
@@ -595,7 +598,7 @@ func (c *client) nodesWithIPPortAndAS(ip string, asNum numorstring.ASNumber, por
 	}
 	nodeNames := []string{}
 	for nodeName := range c.nodeLabels {
-		nodeIPv4, nodeIPv6, nodeAS, _ := c.nodeToBGPFields(nodeName)
+		nodeIPv4, nodeIPv6, nodeAS, _, _ := c.nodeToBGPFields(nodeName)
 		if (nodeIPv4 != ip) && (nodeIPv6 != ip) {
 			continue
 		}
@@ -618,12 +621,13 @@ func (c *client) nodesWithIPPortAndAS(ip string, asNum numorstring.ASNumber, por
 	return nodeNames
 }
 
-func (c *client) nodeToBGPFields(nodeName string) (string, string, string, string) {
+func (c *client) nodeToBGPFields(nodeName string) (string, string, string, string, string) {
 	ipv4Key, _ := model.KeyToDefaultPath(model.NodeBGPConfigKey{Nodename: nodeName, Name: "ip_addr_v4"})
 	ipv6Key, _ := model.KeyToDefaultPath(model.NodeBGPConfigKey{Nodename: nodeName, Name: "ip_addr_v6"})
 	asKey, _ := model.KeyToDefaultPath(model.NodeBGPConfigKey{Nodename: nodeName, Name: "as_num"})
 	rrKey, _ := model.KeyToDefaultPath(model.NodeBGPConfigKey{Nodename: nodeName, Name: "rr_cluster_id"})
-	return c.cache[ipv4Key], c.cache[ipv6Key], c.cache[asKey], c.cache[rrKey]
+	passwordKey, _ := model.KeyToDefaultPath(model.NodeBGPConfigKey{Nodename: nodeName, Name: "password"})
+	return c.cache[ipv4Key], c.cache[ipv6Key], c.cache[asKey], c.cache[rrKey], c.cache[passwordKey]
 }
 
 func (c *client) globalAS() string {
@@ -631,8 +635,13 @@ func (c *client) globalAS() string {
 	return c.cache[asKey]
 }
 
+func (c *client) globalPassword() string {
+	passwordKey, _ := model.KeyToDefaultPath(model.GlobalBGPConfigKey{Name: "password"})
+	return c.cache[passwordKey]
+}
+
 func (c *client) nodeAsBGPPeers(nodeName string) (peers []*bgpPeer) {
-	ipv4Str, ipv6Str, asNum, rrClusterID := c.nodeToBGPFields(nodeName)
+	ipv4Str, ipv6Str, asNum, rrClusterID, password := c.nodeToBGPFields(nodeName)
 	for version, ipStr := range map[string]string{
 		"IPv4": ipv4Str,
 		"IPv6": ipv6Str,
@@ -671,6 +680,7 @@ func (c *client) nodeAsBGPPeers(nodeName string) (peers []*bgpPeer) {
 				log.WithError(err).Warningf("Problem parsing global AS number %v for node %v", asNum, nodeName)
 			}
 		}
+		peer.Password = password
 		peer.RRClusterID = rrClusterID
 		peers = append(peers, peer)
 	}

@@ -108,7 +108,9 @@ protocol direct {
 }
 
 {{if eq "" ($node_ip6)}}# IPv6 disabled on this node.
-{{else}}{{$node_as_key := printf "/host/%s/as_num" (getenv "NODENAME")}}
+{{else}}
+{{- $node_as_key := printf "/host/%s/as_num" (getenv "NODENAME")}}
+{{- $node_password_key := printf "/host/%s/password" (getenv "NODENAME")}}
 # Template for all BGP clients
 template bgp bgp_template {
 {{- $as_key := or (and (exists $node_as_key) $node_as_key) "/global/as_num"}}
@@ -116,6 +118,10 @@ template bgp bgp_template {
 {{- template "LOGGING"}}
   description "Connection to BGP peer";
   local as {{$node_as_num}};
+{{- $password := getv $node_password_key (getv "/global/password" "")}}
+{{- if ne "" $password}}
+  password "{{$password}}";
+{{- end}}
   multihop;
   gateway recursive; # This should be the default, but just in case.
   import all;        # Import all routes, since we don't know what the upstream
@@ -186,6 +192,9 @@ protocol bgp Global_{{$id}} from bgp_template {
   rr client;
   rr cluster id {{$node_cluster_id}};
 {{- end}}
+{{- if and ($data.password) (ne "" $data.password)}}
+  password {{$data.password}};
+{{- end}}
 }
 {{- end}}
 {{end}}
@@ -212,6 +221,9 @@ protocol bgp Node_{{$id}} from bgp_template {
 {{- end}}
 {{- if and (ne $data.as_num $node_as_num) ($data.keep_next_hop)}}
   next hop keep;
+{{- end}}
+{{- if and ($data.password) (ne "" $data.password)}}
+  password {{$data.password}};
 {{- end}}
 }
 {{- end}}
